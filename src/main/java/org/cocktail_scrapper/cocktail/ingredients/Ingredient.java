@@ -52,13 +52,6 @@ public record Ingredient(String name, double quantity, Unit unit) {
         }
     }
 
-    @Override
-    public String toString() {
-        if(quantity==0.0){
-            return unit().getFullName() + " - " +name;
-        }
-        return quantity +" "+ unit().getAbbreviation() + " - " +name;
-    }
 
     public static void main(String[] args) {
         String s ="30 ml - La Fée Parisienne absinthe";

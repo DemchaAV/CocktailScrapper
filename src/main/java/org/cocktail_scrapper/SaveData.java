@@ -1,9 +1,5 @@
 package org.cocktail_scrapper;
 
-import org.cocktail_scrapper.threads.ThreadWriter;
-
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 

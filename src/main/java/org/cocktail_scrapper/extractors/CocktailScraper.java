@@ -3,7 +3,7 @@ package org.cocktail_scrapper.extractors;
 import org.cocktail_scrapper.Logger;
 import org.cocktail_scrapper.cocktail.CocktailData;
 import org.cocktail_scrapper.links.XmlParser;
-import org.cocktail_scrapper.threads.ThreadReader;
+import org.cocktail_scrapper.extractors.threads.ThreadReader;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -52,7 +52,7 @@ public class CocktailScraper {
 
             // Выводим новый документ
         } else {
-            System.out.println("No elements found!");
+           Logger.logWriter("No elements found!" +  ulr);
         }
         return new CocktailScraper(doc, fragment, ulr);
     }
@@ -91,7 +91,7 @@ public class CocktailScraper {
         }
     }
 
-    public static void extract(int rows, List<String> urls, BlockingQueue<CocktailData> blockingQueue) throws InterruptedException {
+    public static void extract(int rows, List<String> urls, BlockingQueue<CocktailData> blockingQueue, String stopKeyQueue) throws InterruptedException {
         String[] userAgents = {
                 // Google Chrome (Windows)
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
@@ -104,6 +104,7 @@ public class CocktailScraper {
                 // Opera (Windows)
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36 OPR/101.0.0.0"
         };
+        int processedUrls = 0;
 
         if (urls == null) {
 
@@ -115,6 +116,7 @@ public class CocktailScraper {
             }
             if (urls == null) {
                 Logger.logWriter("Urls = null");
+                System.out.printf("ProcessedUrls %s", processedUrls);
                 return;
             }
         }
@@ -125,9 +127,14 @@ public class CocktailScraper {
         System.out.println("Start time is: " + currentTime);
         approximatelyTime(rows);
 
+        CocktailData stopCocktail = new CocktailData(stopKeyQueue);
         String currentUrl = null;
+        int percentage = 0;
         try {
             for (int i = 0; i < rows; i++) {
+                if (Thread.currentThread().isInterrupted()) {
+                    break;
+                }
                 currentUrl = urls.get(i);
                 int numberAgents = (int) (Math.random() * userAgents.length);
                 CocktailData cocktail;
@@ -137,33 +144,44 @@ public class CocktailScraper {
                     Logger.logWriter("%s was failed on extraction", currentUrl);
                     continue;
                 }
-
+                if (cocktail == null) {
+                    Logger.logWriter("%s was failed cocktail is null", currentUrl);
+                    return;
+                }
+                processedUrls++;
                 blockingQueue.put(cocktail);
                 System.out.print("\r");
 
                 // Calculate progress percentage with floating-point arithmetic, then truncate
-                int percentage = (int) ((double) i / rows * 100);
+                percentage = (int) ((double) i / rows * 100);
                 int sleepTime = 2 + (int) (Math.random() * 3);
 
                 // Print as a neat three-digit value followed by a percent symbol
                 System.out.printf(format, percentage, cocktail.name());
                 TimeUnit.SECONDS.sleep(sleepTime);
             }
-            ThreadReader.doneStatus =true;
-            System.out.println("\n" + currentTime + " Complete!!");
+            System.out.print("\r");
+            System.out.println(currentTime + " Complete!!" + "\n ProcessedUrls : " + processedUrls);
+
+
         } catch (Exception e) {
-            System.err.println("Current link with data error is " + currentUrl);
+
+            e.printStackTrace();
             throw new RuntimeException(e);
         } finally {
             System.out.println("Finally block -> last link: " + currentUrl);
-            ThreadReader.doneStatus =true;
-            Thread.currentThread().interrupt();
-
+            ThreadReader.doneStatus = true;
+            if (!Thread.currentThread().isInterrupted()) {
+                blockingQueue.put(new CocktailData(stopKeyQueue));
+                Thread.currentThread().interrupt();
+            }
         }
+
+
     }
 
     public static void extract(int rows) throws InterruptedException {
-        extract(rows, null, null);
+        extract(rows, null, null, null);
     }
 
     static void approximatelyTime(int rows) {
@@ -171,8 +189,7 @@ public class CocktailScraper {
         String maxTime = formatTime(5 * rows);
 
 
-        System.out.println("Minimum time to finish is: " + minTime);
-        System.out.println("Max time to finish is: " + maxTime);
+        System.out.println("Processing time takes approximately between " + minTime + " and " + maxTime);
     }
 
     private static String formatTime(long totalSeconds) {

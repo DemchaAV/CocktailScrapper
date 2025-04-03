@@ -17,7 +17,17 @@ public enum Unit {
     TOP_UP("top up","Top up With"),
     GRAM("gram","Gram"),
     OTHER("other","Other"),
+    PEEL( "peel","Peel"),
+    SLICE("slice","Slice"),
+    BARSPOON("barspoon","Barspoon"),
+    FLOAT("float","Float)"),
+    SPLASH( "splash","Splash"),
+    INCH("inch","Inch"),
+    GLASS("glass","Glass"),
+    ZEST( "zest","Zest"),
+    GRATED_ZEST( "grated zest","Grated zest"),
     UNKNOWN("unknown","Unknown");
+
 
     private final String abbreviation; // Краткое обозначение единицы
     private final String fullName;    // Полное название единицы

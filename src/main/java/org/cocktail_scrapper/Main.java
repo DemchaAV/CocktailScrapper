@@ -1,169 +1,91 @@
 package org.cocktail_scrapper;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
 import com.mysql.cj.jdbc.MysqlDataSource;
+import org.bson.Document;
+import org.bson.conversions.Bson;
+import org.cocktail_scrapper.cocktail.Cocktail;
 import org.cocktail_scrapper.cocktail.CocktailData;
-import org.cocktail_scrapper.extractors.CocktailScraper;
-import org.cocktail_scrapper.links.XmlParser;
-import org.cocktail_scrapper.threads.ThreadReader;
-import org.cocktail_scrapper.threads.ThreadWriter;
+import org.cocktail_scrapper.cocktail.CocktailSerializer;
+import org.cocktail_scrapper.cocktail.ingredients.Ingredient;
+import org.cocktail_scrapper.cocktail.ingredients.Unit;
+import org.cocktail_scrapper.extractors.threads.ThreadReader;
+import org.cocktail_scrapper.extractors.threads.ThreadWriter;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
+import java.util.Scanner;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
+
+import static com.mongodb.client.model.Filters.regex;
+import static javax.management.Query.eq;
 
 public class Main {
-    static final String URL = "https://www.diffordsguide.com/cocktails/recipe/3282/";
     static String formattedURL = null;
-    static String likesPath = "C:\\Users\\Demch\\OneDrive\\BarMixer\\resource\\urls\\urls_cocktails_top_100.txt";
-    static List<CocktailData> cocktails = new ArrayList<>();
+    static Integer counter = 0;
 
-    public static void main(String[] args) throws InterruptedException, FileNotFoundException {
+    public static void main(String[] args) throws JsonProcessingException {
         List<String> urls;
-        try {
-            urls = Files.readAllLines(Path.of(likesPath));
+        //initialize urls from file
 
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        //Loaded cocktails from urls
         BlockingQueue<CocktailData> cocktailDataBlockingQueue = new LinkedBlockingQueue<>(10);
 
-        int rows = urls.size();
-
-        String rootPath = "C:\\Users\\Demch\\OneDrive\\BarMixer\\resource";
-        String cocktailFilename = "cocktails_top_100.csv";
-
-//        String testUrl = "https://www.diffordsguide.com/cocktails/recipe/2908/aperol-spritz-aperitivo-spritz";
-//        var cocktail = CocktailScraper.loader(testUrl).extract();
-//        System.out.println(cocktail);
-//        String cocktailNameTest = "Aperol Spritz / Aperitivo Spritz";
-//        System.out.println(cocktailNameTest.replace("/", ""));
-
-        runMultiThreads(cocktailDataBlockingQueue, 1, List.of("https://www.diffordsguide.com/cocktails/recipe/1797/appletini-sour-apple-martini"), rootPath, cocktailFilename);
-
-    }
-
-    private static void runMultiThreads(BlockingQueue<CocktailData> cocktailDataBlockingQueue, int rows, List<String> urls, String rootPath, String cocktailFileName) {
-        Logger.setPATH(rootPath);
-        Thread threadReader = new ThreadReader(cocktailDataBlockingQueue, rows, urls);
-        threadReader.setName("ThreadReader");
-        Thread threadWriter = new ThreadWriter(cocktailDataBlockingQueue, rootPath, cocktailFileName);
-        threadWriter.setName("Writer Thread");
+        List<CocktailData> cocktailDataList = null;
+        List<CocktailData> fixed = null;
 
 
-        threadReader.start();
-        threadWriter.start();
-    }
+        String rootPath = "C:\\Users\\Demch\\OneDrive\\BarMixer\\resource\\allCocktails";
+        String cocktailFilename = "cocktails.json";
 
-    private static void extract(int rows, List<String> urls, BlockingQueue<CocktailData> blockingQueue) throws InterruptedException {
-        String[] userAgents = {
-                // Google Chrome (Windows)
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
-                // Mozilla Firefox (Windows)
-                "Mozilla/5.0 (Windows NT 10.0; WOW64; rv:116.0) Gecko/20100101 Firefox/116.0",
-                // Safari (macOS)
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15",
-                // Microsoft Edge (Windows)
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36 Edg/115.0.0.0",
-                // Opera (Windows)
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36 OPR/101.0.0.0"
-        };
+        // Deserialize
+        var start = System.currentTimeMillis();
+        cocktailDataList = CocktailSerializer.fromJsonToList(new File(rootPath + "\\recipes\\" + cocktailFilename));
 
-        if (urls == null) {
+        var noImage = checkerImage(cocktailDataList, rootPath + "\\img\\");
+        if (noImage != null && noImage.size() > 0) {
+            noImage.forEach((cocktail -> System.out.println(cocktail.name())));
+        } else {
+            System.out.println("All Cocktails has images!");
+        }
 
-            try {
-                //load urls from internet
-                urls = XmlParser.load();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
+        Properties properties = new Properties();
+        try (InputStream input = Main.class.getClassLoader().getResourceAsStream("config.properties")) {
+            // Load properties from the config.properties file
+            properties.load(input);
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+        String connectionUrl = properties.getProperty("connectionUrl");
+        try (MongoClient mongoClient = MongoClients.create(connectionUrl)) {
+            MongoDatabase database = mongoClient.getDatabase("BarMixerDB");
+            MongoCollection<Document> collection = database.getCollection("cocktails");
+            List<Document> documents = new ArrayList<>();
+            for (CocktailData cocktailData : cocktailDataList) {
+                String json = CocktailSerializer.toJson(cocktailData);
+                documents.add(Document.parse(json));
+
             }
-            if (urls == null) {
-                System.out.println("Urls = null");
-                return;
-            }
+            collection.insertMany(documents);
+            Bson query = regex("name", "100 year old cigar", "i");
+            var doc = collection.find(query).first();
+            System.out.println(doc);
+
+            // Creates instructions to project two document fields
+
+
         }
 
-        int length = (int) Math.floor(Math.log10(rows)) + 1;
-        String format = "% " + length + "d%% Current cocktail: %s";
-
-        System.out.println("Start time is: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("hh:mm:ss  dd-MMM-yyyy")));
-        approximatelyTime(rows);
-
-        try {
-            for (int i = 1; i <= rows; i++) {
-                CocktailScraper extractor = null;
-                int numberAgents = (int) (Math.random() * userAgents.length);
-
-                try {
-                    formattedURL = urls.get(i);
-                    extractor = CocktailScraper.loader(formattedURL, userAgents[numberAgents]);
-                } catch (Exception e) {
-                    continue;
-                }
-
-                CocktailData cocktail = extractor.extract();
-//                cocktails.add(cocktail);
-                blockingQueue.put(cocktail);
-                System.out.print("\r");
-
-                // Calculate progress percentage with floating-point arithmetic, then truncate
-                int percentage = (int) ((double) i / rows * 100);
-                int sleepTime = 2 + (int) (Math.random() * 3);
-
-                // Print as a neat three-digit value followed by a percent symbol
-                System.out.printf(format, percentage, cocktail.name());
-                TimeUnit.SECONDS.sleep(sleepTime);
-            }
-            System.out.println("\nComplete!!");
-        } catch (Exception e) {
-            System.err.println("Current link with data error is " + formattedURL);
-            throw new RuntimeException(e);
-        } finally {
-            System.out.println("Finally block -> last link: " + formattedURL);
-            blockingQueue.put(null);
-
-        }
-    }
-
-    private static void extract(int rows) throws InterruptedException {
-        extract(rows, null, null);
-    }
-
-
-    static void approximatelyTime(int rows) {
-        String minTime = formatTime(2 * rows);
-        String maxTime = formatTime(5 * rows);
-
-
-        System.out.println("Minimum time to finish is: " + minTime);
-        System.out.println("Max time to finish is: " + maxTime);
-    }
-
-    private static String formatTime(long totalSeconds) {
-        long hours = TimeUnit.SECONDS.toHours(totalSeconds);
-        long minutes = TimeUnit.SECONDS.toMinutes(totalSeconds) % 60;
-        long seconds = totalSeconds % 60;
-
-        // Build a user-friendly time string
-        StringBuilder sb = new StringBuilder();
-        if (hours > 0) {
-            sb.append(hours).append(" hours ");
-        }
-        if (minutes > 0) {
-            sb.append(minutes).append(" minutes ");
-        }
-        // Display seconds if there are any, or if everything else is zero
-        if (seconds > 0 || sb.length() == 0) {
-            sb.append(seconds).append(" seconds");
-        }
-        return sb.toString().trim();
     }
 
     private MysqlDataSource getConnection() {
@@ -176,4 +98,194 @@ public class Main {
         dataSource.setDatabaseName("cocktail_db");
         return dataSource;
     }
+
+    public static List<String> getUrlsFromLog(String path) {
+        List<String> urls = new ArrayList<>();
+        File file = new File(path);
+        Scanner scanner;
+        String keyWord = "Problem Url";
+        if (file.exists()) {
+            try {
+                scanner = new Scanner(file);
+                String currentRow = null;
+                String url;
+                while (scanner.hasNextLine()) {
+                    currentRow = scanner.nextLine();
+                    if (currentRow.contains(keyWord)) {
+                        url = currentRow.substring(currentRow.indexOf(keyWord) + keyWord.length()).trim();
+                        urls.add(url);
+                    }
+                }
+            } catch (FileNotFoundException e) {
+                throw new RuntimeException(e);
+            }
+        } else {
+            System.out.println("File doesn't exists " + path);
+        }
+        return urls;
+    }
+
+    /**
+     * Current method checks are all cocktails has an image in the rootPath
+     *
+     * @param cocktailDataList
+     * @param rootPath
+     * @return
+     */
+    public static List<CocktailData> checkerImage(List<CocktailData> cocktailDataList, String rootPath) {
+        List<CocktailData> cocktailsNoImage = null;
+        String name;
+        File imgFile;
+        String path;
+        for (CocktailData cocktailData : cocktailDataList) {
+            name = Cocktail.sanitizeFileName(cocktailData.name());
+            path = rootPath + name + ".webp";
+            imgFile = new File(path);
+            if (!imgFile.exists()) {
+                if (cocktailsNoImage != null) {
+                    cocktailsNoImage.add(cocktailData);
+                } else {
+                    cocktailsNoImage = new ArrayList<>();
+                    cocktailsNoImage.add(cocktailData);
+                }
+            }
+        }
+        return cocktailsNoImage;
+    }
+
+    /**
+     * @param cocktailDataBlockingQueue - BlockingQueue for passing data between threads
+     * @param rows                      - how many row has to be read. Has to be no more the size of the list
+     * @param urls                      - List urls of cocktail row by row
+     * @param rootPath                  - Path to save the data
+     * @param cocktailFileName          - Name of the file to save the data
+     * @param stopKeyQueue              -this word will be put in to the object as a name of cocktail to notify the process has been finished
+     */
+
+
+    private static void runMultiThreads(BlockingQueue<CocktailData> cocktailDataBlockingQueue, int rows, List<String> urls, String rootPath, String cocktailFileName, String stopKeyQueue) {
+        Logger.setPATH(rootPath);
+        ThreadReader threadReader = new ThreadReader(cocktailDataBlockingQueue, rows, urls, stopKeyQueue);
+        threadReader.setName("ThreadReader");
+        Thread threadWriter = new ThreadWriter(cocktailDataBlockingQueue, rootPath, cocktailFileName, threadReader, stopKeyQueue);
+        threadWriter.setName("Writer Thread");
+
+
+        threadReader.start();
+        threadWriter.start();
+    }
+
+    //TODO Current method was created with a purpose to change some problem unfinished data. Can be removed
+    private static CocktailData fixCocktailIngredients(CocktailData checkingCocktail) {
+        Cocktail fixedCocktail = new Cocktail(checkingCocktail);
+        Ingredient currentIngredients;
+        for (int i = 0; i < fixedCocktail.getIngredients().size(); i++) {
+            currentIngredients = fixedCocktail.getIngredients().get(i);
+            Ingredient newIngredient;
+            if (currentIngredients.unit() == Unit.UNKNOWN) {
+                System.out.println("++");
+                newIngredient = fixIngredient(currentIngredients);
+                if (newIngredient != null) {
+                    fixedCocktail.getIngredients().set(i, newIngredient);
+                } else {
+                    //Manual method with Scanner input
+                    System.out.println(fixedCocktail);
+                    System.out.println(currentIngredients);
+                    System.out.println("Enter Name of ingredient ");
+                    String name;
+                    String unitAbbreviate;
+                    double amount;
+                    name = new Scanner(System.in).nextLine();
+                    System.out.println("Enter Name of Uit ");
+                    unitAbbreviate = new Scanner(System.in).next();
+                    System.out.println("Enter Name of amount ");
+                    amount = new Scanner(System.in).nextDouble();
+                    System.out.println(name + " " + unitAbbreviate + " " + amount);
+                    name = (name == null || name.isEmpty()) ? currentIngredients.name() : name;
+                    amount = (amount == 0.0) ? currentIngredients.quantity() : amount;
+                    unitAbbreviate = (unitAbbreviate == null || unitAbbreviate.isEmpty()) ? currentIngredients.unit().getAbbreviation() : unitAbbreviate;
+                    newIngredient = new Ingredient(name, amount, Unit.fromAbbreviation(unitAbbreviate));
+                    fixedCocktail.getIngredients().set(i, newIngredient);
+                }
+                fixedCocktail.getIngredients().set(i, newIngredient);
+            }
+        }
+        return new CocktailData(fixedCocktail);
+    }
+
+    //TODO This method is a par of the method who do the fixing for a data. Can be removed
+    public static Ingredient fixIngredient(Ingredient currentIngredient) {
+        Ingredient newIngredient = null;
+
+        if (currentIngredient.name().toLowerCase().contains("Single cream/half-and-half".toLowerCase())) {
+
+            newIngredient = new Ingredient("Single cream/half-and-half", 0.0, Unit.FLOAT);
+            return newIngredient;
+        } else if (currentIngredient.name().toLowerCase().contains("Franklin & Sons 1886 Soda Water".toLowerCase())) {
+            newIngredient = new Ingredient("Franklin & Sons 1886 Soda Water", 1.0, Unit.SPLASH);
+            return newIngredient;
+
+        } else if (currentIngredient.name().toLowerCase().contains("1 1⁄2 inch - Cucumber".toLowerCase())) {
+            newIngredient = new Ingredient("Cucumber (fresh)", 1.5, Unit.INCH);
+            return newIngredient;
+
+        } else if (currentIngredient.name().toLowerCase().contains("Float - ".toLowerCase())) {
+            String newWord = currentIngredient.name().replace("Float - ", "");
+            newIngredient = new Ingredient(newWord.trim(), 1.0, Unit.FLOAT);
+            return newIngredient;
+
+        } else if (currentIngredient.name().toLowerCase().contains("1 1⁄2 barspoon - ".toLowerCase())) {
+            String newWord = currentIngredient.name().replace("1 1⁄2 barspoon - ", "");
+            newIngredient = new Ingredient(newWord.trim(), 1.5, Unit.BARSPOON);
+            return newIngredient;
+
+        } else if (currentIngredient.name().toLowerCase().contains("2⁄3 fill glass with - Stout beer".toLowerCase())) {
+            String newWord = currentIngredient.name();
+            newIngredient = new Ingredient(newWord.trim(), 0.0, Unit.GLASS);
+            return newIngredient;
+
+        } else if (currentIngredient.name().toLowerCase().contains("1 1⁄2 fresh - ".toLowerCase())) {
+            String newWord = currentIngredient.name().replace("1 1⁄2 fresh - ", "");
+            newIngredient = new Ingredient(newWord.trim(), 1.5, Unit.WHOLE);
+            return newIngredient;
+
+        } else if (currentIngredient.name().toLowerCase().contains("1⁄2 fill glass with - ".toLowerCase())) {
+            String newWord = currentIngredient.name().replace("1⁄2 fill glass with - ", "");
+            newIngredient = new Ingredient(newWord.trim(), 0.5, Unit.GLASS);
+            return newIngredient;
+
+        } else if (currentIngredient.name().toLowerCase().contains("4 1⁄2 fresh - ".toLowerCase())) {
+            String newWord = currentIngredient.name().replace("4 1⁄2 fresh - ", "");
+            newIngredient = new Ingredient(newWord.trim(), 4.5, Unit.WHOLE);
+            return newIngredient;
+
+        } else if (currentIngredient.name().toLowerCase().contains("1 grated zest of - ".toLowerCase())) {
+            String newWord = currentIngredient.name().replace("1 grated zest of - ", "");
+            newIngredient = new Ingredient(newWord.trim(), 1.0, Unit.GRATED_ZEST);
+            return newIngredient;
+
+        } else if (currentIngredient.name().toLowerCase().contains("1 1⁄2 inch - ".toLowerCase())) {
+            String newWord = currentIngredient.name().replace("1 1⁄2 inch - ", "");
+            newIngredient = new Ingredient(newWord.trim(), 1.5, Unit.INCH);
+            return newIngredient;
+
+        } else if (currentIngredient.name().toLowerCase().contains("2⁄3 fill glass with - ".toLowerCase())) {
+            String newWord = currentIngredient.name().replace("2⁄3 fill glass with - ", "");
+            newIngredient = new Ingredient(newWord.trim(), 0.6, Unit.GLASS);
+            return newIngredient;
+
+        } else if (currentIngredient.name().toLowerCase().contains("2 1⁄2 dash - ".toLowerCase())) {
+            String newWord = currentIngredient.name().replace("2 1⁄2 dash - ", "");
+            newIngredient = new Ingredient(newWord.trim(), 2.5, Unit.DASH);
+            return newIngredient;
+
+        } else if (currentIngredient.name().toLowerCase().contains("1 1⁄4 litre".toLowerCase())) {
+            String newWord = currentIngredient.name().replace("1 1⁄4 litre", "");
+            newIngredient = new Ingredient(newWord.trim(), 1.15, Unit.L);
+            return newIngredient;
+
+        }
+        return newIngredient;
+    }
+
 }

@@ -1,6 +1,7 @@
 package org.cocktail_scrapper.cocktail;
 
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.cocktail_scrapper.cocktail.ingredients.Ingredient;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -14,7 +15,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -35,7 +38,22 @@ public record CocktailData(
         String name, List<Ingredient> ingredients, List<String> allergens, String glassWear, String garnish,
         int strength, int taste,
         List<String> instruction,
-        String history, int nutrition, double unitsOfAlc, double alcPercent, double gramsAlc, byte[] img) {
+        String history, int nutrition, double unitsOfAlc, double alcPercent, double gramsAlc,
+        @JsonIgnore byte[] img) implements Serializable {
+    private static final long serialVersionUID = 1L;
+
+    public CocktailData(String name) {
+        this(name, null, null, null, null, 0, 0, null, null, 0, 0.0, 0.0, 0.0, null);
+    }
+
+    public CocktailData(CocktailData cocktailData) {
+        this(cocktailData.name(), cocktailData.ingredients(), cocktailData.allergens(), cocktailData.glassWear(), cocktailData.garnish(), cocktailData.strength(), cocktailData.taste(), cocktailData.instruction(), cocktailData.history(), cocktailData.nutrition(), cocktailData.unitsOfAlc(), cocktailData.alcPercent(), cocktailData.gramsAlc(), (cocktailData.img() == null) ? null : Arrays.copyOf(cocktailData.img(), cocktailData.img().length));
+    }
+
+    public CocktailData(Cocktail cocktail) {
+        this(cocktail.getName(), cocktail.getIngredients(), cocktail.getAllergens(), cocktail.getGlassWear(), cocktail.getGarnish(), cocktail.getStrength(), cocktail.getTaste(), cocktail.getInstruction(), cocktail.getHistory(), cocktail.getNutrition(), cocktail.getUnitsOfAlc(), cocktail.getAlcPercent(), cocktail.getGramsAlc(), cocktail.getImg());
+
+    }
 
     public CocktailData(Builder builder) {
         this(
@@ -57,7 +75,49 @@ public record CocktailData(
         );
     }
 
-    //todo Need delete variable s
+    @Override
+
+    public boolean equals(Object o) {
+        if (this == o) return true; // Check if both references are the same
+        if (o == null || getClass() != o.getClass()) return false; // Check for null and class mismatch
+
+        CocktailData that = (CocktailData) o;
+
+        return taste == that.taste &&
+               strength == that.strength &&
+               nutrition == that.nutrition &&
+               Double.compare(gramsAlc, that.gramsAlc) == 0 &&
+               Double.compare(unitsOfAlc, that.unitsOfAlc) == 0 &&
+               Double.compare(alcPercent, that.alcPercent) == 0 &&
+               Arrays.equals(img, that.img) &&
+               Objects.equals(name, that.name) && // Use Objects.equals() to handle nulls
+               Objects.equals(garnish, that.garnish) &&
+               Objects.equals(history, that.history) &&
+               Objects.equals(glassWear, that.glassWear) &&
+               Objects.equals(allergens, that.allergens) &&
+               Objects.equals(instruction, that.instruction) &&
+               Objects.equals(ingredients, that.ingredients);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = name.hashCode();
+        result = 31 * result + ingredients.hashCode();
+        result = 31 * result + allergens.hashCode();
+        result = 31 * result + glassWear.hashCode();
+        result = 31 * result + garnish.hashCode();
+        result = 31 * result + strength;
+        result = 31 * result + taste;
+        result = 31 * result + instruction.hashCode();
+        result = 31 * result + history.hashCode();
+        result = 31 * result + nutrition;
+        result = 31 * result + Double.hashCode(unitsOfAlc);
+        result = 31 * result + Double.hashCode(alcPercent);
+        result = 31 * result + Double.hashCode(gramsAlc);
+        result = 31 * result + Arrays.hashCode(img);
+        return result;
+    }
+
     public String print() {
         String s = "";
         return Print.format("[m][bd]Cocktail Name:[reset] [bd]{}[reset]\n"
@@ -88,69 +148,6 @@ public record CocktailData(
                 , gramsAlc
 
         );
-    }
-
-    public String toSvgFormat() {
-        String foramated = (
-                "%s," +     //name
-                " %s," +     //ingredients
-                " %s," +     //allergens
-                "\"%s\"," +     //glassWear
-                " \"%s\"," +     //garnish
-                " %d," +     //strength
-                " %d," +     //taste
-                " %s," +     //instruction
-                " \"%s\"," +     //history
-                " %d," +     //nutrition
-                " %.2f," +     //unitsOfAlc
-                " %.2f," +     //alcPercent
-                " %.2f"       //gramsAlc
-        ).formatted(
-                this.name,
-                this.ingredients,
-                this.allergens,
-                this.glassWear,
-                this.garnish,
-                this.strength,
-                this.taste,
-                this.instruction,
-                this.history,
-                this.nutrition,
-                this.unitsOfAlc,
-                this.alcPercent,
-                this.gramsAlc
-        );
-        return foramated;
-    }
-
-    @Override
-    public String toString() {
-
-        return "Cocktail\n" +
-               "name=" + Print.format("[bl]{}[reset]", name
-                , String.join("\n", ingredients.toString())
-                , String.join("\n", allergens.toString())
-                , glassWear
-                , strength
-                , taste
-                , String.join("\n", instruction.toString())
-                , history
-                , nutrition
-                , unitsOfAlc
-                , alcPercent
-                , gramsAlc
-        ) +
-               "\ningredients=\n" + (String.join("\n", ingredients.toString())) +
-               "\nAlergis=\n" + (String.join("\n", allergens.toString())) +
-               "\n glassWear= " + glassWear +
-               ",\n strength= " + strength +
-               ",\n taste=" + taste +
-               ",\n instruction= " + String.join("\n", instruction.toString()) +
-               ",\n history=" + history +
-               ",\n nutrition=" + nutrition +
-               ",\n unitsOfAlc=" + unitsOfAlc +
-               ",\n alcPercent=" + alcPercent +
-               ",\n gramsAlc=" + gramsAlc;
     }
 
     public static class Builder {
@@ -206,6 +203,7 @@ public record CocktailData(
                     .replace("(difford Recipe)","")
                     .replace("(difford recipe)","")
                     .replace("(Difford recipe)","")
+                    .replace("(alcohol-free*)", "")
                     .replace("  ", " ")
                     .trim();
             cocktailName = contains ? cocktailName + ")" : cocktailName;
